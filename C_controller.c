@@ -70,7 +70,8 @@ void ReadSensors() {
 
 int sum = 0, pre_Sum = 0, pre1_Sum=0;
 int turn_Signal = -1, count_Straight = 0;
-bool roundabout_Signal = 0, stable = 0;
+bool bridge = 0;
+bool stable = 0, roundabout_Signal=0;
 
 void setV(double left, double right)
 {
@@ -331,7 +332,7 @@ void Turn_left_corner()
 {
     printf("\tTurn left corner");
 
-    if (Position(filted) == FULL_SIGNAL || Position(filted) == ROUNDABOUT || (roundabout_Signal && turn_Signal == 1))
+    if (Position(filted) == FULL_SIGNAL || Position(filted) == ROUNDABOUT)
     {
         auto_Run(13, 0.7, 0.7);
         int count = 0;
@@ -436,7 +437,7 @@ void Turn_right_corner()
 {
     printf("\tTurn right corner");
 
-    if (Position(filted) == FULL_SIGNAL || Position(filted) == ROUNDABOUT || (roundabout_Signal && turn_Signal == 2))
+    if (Position(filted) == FULL_SIGNAL || Position(filted) == ROUNDABOUT )
     {
         int count = 0;
         auto_Run(13, 0.7, 0.7);
@@ -487,7 +488,7 @@ void roundabout()
     auto_Run(13, 0.7, 0.7);
     int count = 0;
     ReadSensors();
-    while ((!filted[0] && !Position(filted) == MID) && count < 27)
+    while (/*(!filted[0] && Position(filted) != MID) &&*/ count < 26)
     {
         wb_robot_step(TIME_STEP);
 
@@ -503,8 +504,8 @@ void roundabout()
 
         ReadSensors();
     }
-    turn_Signal = 0;
     roundabout_Signal = 0;
+    turn_Signal = 0;
     stable = 0;
 }
 
@@ -531,6 +532,7 @@ void inroundabout(WbDeviceTag ds, double ds_sensor)
 
         ReadSensors();
     }
+    roundabout_Signal = 1;
 }
 
 
@@ -539,14 +541,14 @@ void obstacle(WbDeviceTag ds, double ds_sensor)
     int count = 0;
     printf("\tOstacle");
     auto_Run(3, 3, 3);
-    auto_Run(22, 1.1, 2.7);
+    auto_Run(22, 1.1, 2.5);
 
-    while (count++ < 43)
+    while (count++ < 33)
     {
         wb_robot_step(TIME_STEP);
         printf("\n\tPosition : 0b");
         for (int i = 0; i < 8; i++) printf("%u", filted[i]);
-        setV(2.5, 2.5);
+        setV(2.8, 2.8);
 
         ReadSensors();
         Position(filted);
@@ -565,7 +567,7 @@ void obstacle(WbDeviceTag ds, double ds_sensor)
         printf("\n\tPosition : 0b");
 
         for (int i = 0; i < 8; i++) printf("%u", filted[i]);
-        setV(2, 0);
+        setV(2.2, 0);
 
         ds_sensor = wb_distance_sensor_get_value(ds);
         printf("\tDS=%f", ds_sensor);
@@ -575,6 +577,8 @@ void obstacle(WbDeviceTag ds, double ds_sensor)
         wb_motor_set_velocity(left_motor, left_ratio * MAX_SPEED);
         wb_motor_set_velocity(right_motor, right_ratio * MAX_SPEED);
     }
+    roundabout_Signal = 1;
+
 }
 
 
@@ -614,6 +618,7 @@ int main()
     right_motor = wb_robot_get_device("right wheel motor");
     wb_motor_set_position(left_motor, INFINITY);
     wb_motor_set_position(right_motor, INFINITY);
+
     wb_motor_set_velocity(left_motor, 0.0);
     wb_motor_set_velocity(right_motor, 0.0);
 
@@ -639,9 +644,38 @@ int main()
         //đi thẳng
 
         int count1 = 0;
-        if (pos == ROUNDABOUT || (roundabout_Signal && turn_Signal == 1)) roundabout();
-        else if (pos == MID) GoStraight();
+        if (pos == ROUNDABOUT || (roundabout_Signal && turn_Signal==LEFT) ) roundabout();
 
+        else if (ds_sensor < 900 && pos == MID && !bridge)
+        {
+            printf("\tBridge");
+            
+            auto_Run(30, 3.2, 3.2);
+            while (1)
+            {
+                ReadSensors();
+                wb_robot_step(TIME_STEP);
+
+                printf("\n\tPosition : 0b");
+                for (int i = 0; i < 8; i++) printf("%u", filted[i]);
+
+                if (filted[1]) Turn_left();
+                else if (filted[6]) Turn_right();
+                else setV(3.2, 3.2);
+
+                ds_sensor = wb_distance_sensor_get_value(ds);
+                if (ds_sensor < 1000) break;
+
+                wb_motor_set_velocity(left_motor, left_ratio * MAX_SPEED);
+                wb_motor_set_velocity(right_motor, right_ratio * MAX_SPEED);
+                
+            }
+            bridge = 1;
+            printf("\nEnd bridge");
+        }
+
+        else if (pos == MID) GoStraight();
+        
 
         else if (pos == FULL_SIGNAL)
         {
@@ -696,9 +730,8 @@ int main()
                     }
 
                     if (ds_sensor < 1000) obstacle(ds, ds_sensor);
-                    else if (count == 15 && Position(filted) == MID) GoStraight();
+                    else if (count == 11 && (filted[3] || filted[4])) GoStraight();
                     else inroundabout(ds, ds_sensor);
-                    roundabout_Signal = 1;
                 }
                 break;
             case 1:
@@ -711,6 +744,8 @@ int main()
                 break;
             }
         }
+
+        
 
         else if (pos == BLANK_SIGNAL)
         {
@@ -754,7 +789,8 @@ int main()
         wb_motor_set_velocity(right_motor, right_ratio * MAX_SPEED);
 
         pre_Sum = pre1_Sum = 0;
-        
+        printf("\tTurn signal=%d", turn_Signal);
+
         for (int i = 0; i < NB_GROUND_SENS; i++)
         {
             pre1_filted[i] = pre_filted[i];
